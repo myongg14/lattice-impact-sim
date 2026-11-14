@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>낙하 충격 시뮬레이터</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="title">
+    <h1>낙하 충격 시뮬레이터</h1>
+    <p class="sub">PETG 격자 구조 Gyroid · Octet · Honeycomb의 충격 전달 비교</p>
+  </div>
+  <div class="top-actions">
+    <button id="btnPresent" class="btn" title="글씨를 크게">발표 모드</button>
+    <button id="btnTheme" class="btn" title="밝은/어두운 화면">어두운 화면</button>
+    <button id="btnFull" class="btn primary">전체화면</button>
+  </div>
+</header>
+
+<div class="notice" role="note">
+  <strong>안내</strong> 이 결과는 <b>단순화된 모델</b>(질량-스프링-댐퍼 + 셀룰러 고체 응력-변형률 곡선)로 계산한 값이에요.
+  실제 출력물의 결함, 층 사이 접착, 온도, 로드셀 특성에 따라 <b>실제 값과 다를 수 있어요</b>.
+  구조 사이의 <b>경향</b>을 보는 데 쓰고, 실험값으로 계수를 보정해 주세요.
+</div>
+
+<div class="layout">
+  <!-- ================= 입력 패널 ================= -->
+  <aside class="controls" aria-label="입력 변수">
+    <h2>입력 변수</h2>
+
+    <div class="ctl" data-key="mass">
+      <label for="massR">충격체 질량</label>
+      <div class="row"><input type="range" id="massR" min="100" max="2000" step="10" value="500">
+        <input type="number" id="massN" min="100" max="2000" step="10" value="500"><span class="unit">g</span></div>
+    </div>
+
+    <div class="ctl">
+      <label for="heightR">낙하 높이</label>
+      <div class="row"><input type="range" id="heightR" min="5" max="100" step="1" value="22">
+        <input type="number" id="heightN" min="5" max="100" step="1" value="22"><span class="unit">cm</span></div>
+      <p class="hint" id="speedHint"></p>
+    </div>
+
+    <div class="ctl">
+      <div class="label-row"><span class="lbl">상대밀도 ρ*</span>
+        <div class="seg" role="group" aria-label="상대밀도 입력 방식">
+          <button id="rhoCommon" class="on" type="button">공통</button>
+          <button id="rhoEach" type="button">구조별</button>
+        </div>
+      </div>
+      <div id="rhoCommonBox" class="row"><input type="range" id="rhoR" min="10" max="60" step="1" value="30" aria-label="공통 상대밀도">
+        <input type="number" id="rhoN" min="10" max="60" step="1" value="30" aria-label="공통 상대밀도 값"><span class="unit">%</span></div>
+      <div id="rhoEachBox" hidden>
+        <div class="row sub-row"><span class="dot gyroid"></span><span class="nm">Gyroid</span><input type="range" id="rhoR_gyroid" min="10" max="60" step="1" value="30" aria-label="Gyroid 상대밀도"><input type="number" id="rhoN_gyroid" min="10" max="60" step="1" value="30" aria-label="Gyroid 상대밀도 값"><span class="unit">%</span></div>
+        <div class="row sub-row"><span class="dot octet"></span><span class="nm">Octet</span><input type="range" id="rhoR_octet" min="10" max="60" step="1" value="30" aria-label="Octet 상대밀도"><input type="number" id="rhoN_octet" min="10" max="60" step="1" value="30" aria-label="Octet 상대밀도 값"><span class="unit">%</span></div>
+        <div class="row sub-row"><span class="dot honeycomb"></span><span class="nm">Honeycomb</span><input type="range" id="rhoR_honeycomb" min="10" max="60" step="1" value="30" aria-label="Honeycomb 상대밀도"><input type="number" id="rhoN_honeycomb" min="10" max="60" step="1" value="30" aria-label="Honeycomb 상대밀도 값"><span class="unit">%</span></div>
+      </div>
+      <p class="hint" id="massHint"></p>
+    </div>
+
+    <div class="ctl">
+      <label for="cellR">셀 크기</label>
+      <div class="row"><input type="range" id="cellR" min="5" max="20" step="0.5" value="10">
+        <input type="number" id="cellN" min="5" max="20" step="0.5" value="10"><span class="unit">mm</span></div>
+    </div>
+
+    <div class="ctl">
+      <label for="sizeN">시험편 크기 (정육면체 한 변)</label>
+      <div class="row tight"><input type="number" id="sizeN" min="20" max="120" step="1" value="60"><span class="unit">mm</span>
+        <span class="pm">±</span><input type="number" id="tolN" min="0" max="5" step="0.1" value="0.5" aria-label="크기 오차"><span class="unit">mm</span></div>
+      <p class="hint">오차를 넣으면 (크기−오차)와 (크기+오차)도 계산해서 결과 범위를 보여 줘요.</p>
+    </div>
+
+    <button id="btnReset" class="btn ghost wide" type="button">기본값(500g · 22cm · 30%)으로</button>
+    <div id="warnings" class="warnings" aria-live="polite"></div>
+  </aside>
+
+  <!-- ================= 결과 영역 ================= -->
+  <main class="main">
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="result" class="on">결과 비교</button>
+      <button role="tab" data-tab="sweep">변인 스윕</button>
+      <button role="tab" data-tab="viewer">3D 구조</button>
+      <button role="tab" data-tab="anim">충돌 애니메이션</button>
+      <button role="tab" data-tab="why">왜 다를까?</button>
+      <button role="tab" data-tab="exp">실험값 비교</button>
+      <button role="tab" data-tab="settings">모델 설정</button>
+    </nav>
+
+    <!-- 1·2. 결과 비교 -->
+    <section class="tab on" id="tab-result">
+      <div class="card">
+        <div class="card-head">
+          <h3>로드셀 힘 – 시간 그래프</h3>
+          <div class="head-tools">
+            <label class="chk"><input type="checkbox" id="showRaw"> 연속(실제) 힘도 보기</label>
+            <button class="btn small" data-png="force">PNG 저장</button>
+            <button class="btn small" id="csvForce">힘-시간 CSV</button>
+          </div>
+        </div>
+        <div class="chart-box tall"><canvas id="chartForce"></canvas></div>
+        <p class="cap" id="forceCap"></p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>결과 요약</h3>
+          <div class="head-tools">
+            <button class="btn small" data-png="bars">막대그래프 PNG</button>
+            <button class="btn small" id="csvSummary">요약 CSV</button>
+          </div>
+        </div>
+        <div class="bars" id="barsWrap">
+          <div class="bar-cell"><h4>최대 충격력 <span>kN</span></h4><div class="chart-box short"><canvas id="barPeak"></canvas></div></div>
+          <div class="bar-cell"><h4>충격 지속시간 <span>ms</span></h4><div class="chart-box short"><canvas id="barDur"></canvas></div></div>
+          <div class="bar-cell"><h4>충격량 ∫F dt <span>N·s</span></h4><div class="chart-box short"><canvas id="barImp"></canvas></div></div>
+          <div class="bar-cell"><h4>흡수 에너지 <span>J</span></h4><div class="chart-box short"><canvas id="barAbs"></canvas></div></div>
+        </div>
+        <div class="table-wrap"><table class="data" id="summaryTable"></table></div>
+        <p class="cap" id="summaryCap"></p>
+      </div>
+    </section>
+
+    <!-- 3. 변인 스윕 -->
+    <section class="tab" id="tab-sweep">
+      <div class="card">
+        <div class="card-head">
+          <h3>변인 스윕: 최대 충격력 변화</h3>
+          <div class="head-tools"><button class="btn small" data-png="sweep">PNG 저장</button><button class="btn small" id="csvSweep">CSV</button></div>
+        </div>
+        <div class="sweep-ctl">
+          <div class="seg" role="group" aria-label="바꿀 변인">
+            <button id="swHeight" class="on" type="button">낙하 높이</button>
+            <button id="swMass" type="button">충격체 질량</button>
+          </div>
+          <label>범위 <input type="number" id="swFrom" value="5"> ~ <input type="number" id="swTo" value="100"> <span id="swUnit">cm</span></label>
+          <label>점 개수 <input type="number" id="swCount" value="20" min="3" max="60"></label>
+          <label>세로축 <select id="swMetric"><option value="peak">최대 충격력</option><option value="duration">충격 지속시간</option></select></label>
+          <button class="btn primary small" id="swRun" type="button">다시 계산</button>
+        </div>
+        <div class="chart-box tall"><canvas id="chartSweep"></canvas></div>
+        <p class="cap" id="sweepCap">다른 입력값(질량 또는 높이, 상대밀도, 셀 크기)은 왼쪽 패널 값을 그대로 써요. 실험값 탭에 입력한 데이터 중 고정된 변인이 같은 점은 ◆로 겹쳐 보여요.</p>
+      </div>
+    </section>
+
+    <!-- 4. 3D 구조 -->
+    <section class="tab" id="tab-viewer">
+      <div class="card">
+        <div class="card-head">
+          <h3>3D 구조 뷰어</h3>
+          <div class="head-tools">
+            <div class="seg" role="group" aria-label="구조 선택">
+              <button data-v="gyroid" class="on" type="button">Gyroid</button>
+              <button data-v="octet" type="button">Octet</button>
+              <button data-v="honeycomb" type="button">Honeycomb</button>
+            </div>
+            <div class="seg" role="group" aria-label="보기 범위">
+              <button data-scope="whole" class="on" type="button">시험편 전체</button>
+              <button data-scope="cell" type="button">단위셀 2×2×2</button>
+            </div>
+          </div>
+        </div>
+        <div class="viewer-wrap"><canvas id="viewer3d"></canvas><div class="viewer-msg" id="viewerMsg"></div></div>
+        <p class="cap" id="viewerCap"></p>
+      </div>
+    </section>
+
+    <!-- 5. 충돌 애니메이션 -->
+    <section class="tab" id="tab-anim">
+      <div class="card">
+        <div class="card-head">
+          <h3>충돌 애니메이션 (슬로모션)</h3>
+          <div class="head-tools">
+            <button class="btn primary small" id="animPlay" type="button">▶ 재생</button>
+            <label>속도 <select id="animSpeed">
+              <option value="500">1/500배</option><option value="2000" selected>1/2000배</option><option value="5000">1/5000배</option></select></label>
+            <label>변형 확대 <select id="animExag"><option value="auto" selected>자동</option><option value="1">×1 (실제)</option><option value="5">×5</option><option value="20">×20</option></select></label>
+          </div>
+        </div>
+        <canvas id="animCanvas" class="anim-canvas"></canvas>
+        <div class="scrub"><span id="animTime">t = 0.000 ms</span><input type="range" id="animScrub" min="0" max="1000" value="0" aria-label="시간 위치"></div>
+        <div class="chart-box mid"><canvas id="chartAnim"></canvas></div>
+        <p class="cap" id="animCap"></p>
+      </div>
+    </section>
+
+    <!-- 6. 왜 다를까? -->
+    <section class="tab" id="tab-why">
+      <div class="why-grid">
+        <div class="card">
+          <h3>① 신장 지배형 vs 굽힘 지배형</h3>
+          <svg viewBox="0 0 520 232" class="diagram" role="img" aria-label="신장 지배형과 굽힘 지배형 비교 그림">
+            <defs><marker id="arr" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="fill-ink"/></marker></defs>
+            <g transform="translate(20,20)">
+              <text x="105" y="0" class="t-strong" text-anchor="middle">신장 지배형 (Octet)</text>
+              <line x1="105" y1="25" x2="105" y2="45" class="ar" marker-end="url(#arr)"/>
+              <polygon points="30,150 180,150 105,55" class="truss"/>
+              <line x1="67" y1="102" x2="143" y2="102" class="truss"/>
+              <text x="105" y="178" class="t" text-anchor="middle">지주가 늘어나고 줄어들며 버팀</text>
+              <text x="105" y="198" class="t-muted" text-anchor="middle">E ∝ ρ*  → 단단함</text>
+            </g>
+            <g transform="translate(280,20)">
+              <text x="110" y="0" class="t-strong" text-anchor="middle">굽힘 지배형 (Gyroid)</text>
+              <line x1="110" y1="25" x2="110" y2="45" class="ar" marker-end="url(#arr)"/>
+              <path d="M30,150 C30,90 110,110 110,55 C110,110 190,90 190,150" class="bend"/>
+              <path d="M30,150 C40,100 110,120 110,55" class="bend ghost"/>
+              <text x="110" y="178" class="t" text-anchor="middle">벽이 휘면서 버팀(잘 휘어짐)</text>
+              <text x="110" y="198" class="t-muted" text-anchor="middle">E ∝ ρ*²  → 부드러움</text>
+            </g>
+          </svg>
+          <p>같은 상대밀도 30%라도 <b>Octet</b>은 지주가 하중 방향으로 늘어나거나 줄어들어 힘을 받아요(트러스 다리처럼). 그래서 탄성계수가 ρ*에 비례해 큽니다.
+          <b>Gyroid</b>의 곡면은 하중을 받으면 주로 <b>휘어져요</b>. 휘는 것은 늘이는 것보다 훨씬 쉬워서 탄성계수가 ρ*²에 비례하고, ρ*가 1보다 작으니 더 작아져요.
+          <b>Honeycomb</b>을 벽과 같은 방향으로 누르면 벽이 기둥처럼 곧게 버텨 가장 단단하지만, 벽이 한 번 <b>좌굴</b>하면 힘이 뚝 떨어져요.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>② 응력-변형률 곡선과 고원 구간</h3><button class="btn small" data-png="ss">PNG</button></div>
+          <div class="chart-box mid"><canvas id="chartSS"></canvas></div>
+          <p>격자를 계속 누르면 ① <b>탄성</b>(곧은 선) → ② <b>고원</b>(힘이 거의 일정한 채 셀이 차례로 무너짐) → ③ <b>치밀화</b>(셀 벽끼리 맞닿아 급격히 단단해짐)를 거쳐요.
+          충격 에너지는 곡선 아래 넓이(∫σ dε × 부피)만큼 흡수돼요. 고원 구간은 <b>힘이 더 커지지 않으면서</b> 넓이를 크게 만들 수 있어서, 충격 흡수에 가장 좋은 구간이에요.
+          치밀화 구간에 들어가면 힘이 폭발적으로 커지니 그 전에 에너지를 다 받아내야 해요.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>③ 하중-변위 이력곡선 (지금 계산한 결과)</h3><button class="btn small" data-png="hyst">PNG</button></div>
+          <div class="chart-box mid"><canvas id="chartHyst"></canvas></div>
+          <p id="hystCap">누를 때와 돌아올 때의 곡선이 만드는 고리 안 넓이가 시험편이 흡수한 에너지예요. 탄성 구간에서만 움직이면 고리가 얇아서 에너지가 대부분 다시 돌려져요(충격체가 튀어 오름).</p>
+        </div>
+
+        <div class="card">
+          <h3>④ 충격량: F·Δt = Δp</h3>
+          <svg viewBox="0 0 520 220" class="diagram" role="img" aria-label="넓이가 같은 두 충격 펄스 비교">
+            <line x1="40" y1="180" x2="500" y2="180" class="axis"/>
+            <line x1="40" y1="180" x2="40" y2="20" class="axis"/>
+            <text x="500" y="200" class="t-muted" text-anchor="end">시간 t</text>
+            <text x="46" y="26" class="t-muted">힘 F</text>
+            <path d="M70,180 C100,180 110,30 130,30 C150,30 160,180 190,180 Z" class="pulse a"/>
+            <path d="M230,180 C280,180 300,120 340,120 C380,120 410,180 470,180 Z" class="pulse b"/>
+            <text x="130" y="22" class="t-strong" text-anchor="middle">짧고 강한 충격</text>
+            <text x="350" y="110" class="t-strong" text-anchor="middle">길고 약한 충격</text>
+            <text x="130" y="205" class="t" text-anchor="middle">Δt 짧음 → F 큼</text>
+            <text x="350" y="205" class="t" text-anchor="middle">Δt 김 → F 작음</text>
+          </svg>
+          <p>충격체의 운동량 변화 Δp = m·(v<sub>충돌</sub> + v<sub>반발</sub>)는 시험편 종류와 상관없이 비슷해요. 두 펄스의 <b>넓이(충격량 ∫F dt)가 같다면</b>, 시간을 길게 끌수록 최대힘이 작아져요.
+          부드러운 구조(Gyroid)는 천천히 눌리면서 Δt를 늘려 최대 충격력을 낮추고, 단단한 구조(Honeycomb)는 Δt가 짧아 최대 충격력이 커져요.</p>
+          <p class="cap" id="impulseCap"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. 실험값 비교 -->
+    <section class="tab" id="tab-exp">
+      <div class="card">
+        <div class="card-head">
+          <h3>실험 데이터 입력</h3>
+          <div class="head-tools">
+            <button class="btn small" id="expAdd" type="button">+ 행 추가</button>
+            <label class="btn small file">CSV 불러오기<input type="file" id="expFile" accept=".csv,text/csv"></label>
+            <button class="btn small" id="expSample" type="button">CSV 양식 받기</button>
+            <button class="btn small ghost" id="expClear" type="button">모두 지우기</button>
+          </div>
+        </div>
+        <p class="hint">CSV 열 순서: 구조(Gyroid/Octet/Honeycomb), 질량(g), 높이(cm), 최대힘(N), 지속시간(ms). 첫 줄은 제목이어도 돼요. 입력한 값은 이 브라우저에 저장돼요.</p>
+        <div class="table-wrap"><table class="data edit" id="expTable"></table></div>
+      </div>
+      <div class="exp-grid">
+        <div class="card">
+          <div class="card-head"><h3>최대 충격력: 실험 vs 시뮬레이션</h3><button class="btn small" data-png="parityF">PNG</button></div>
+          <div class="chart-box mid"><canvas id="chartParityF"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>충격 지속시간: 실험 vs 시뮬레이션</h3><button class="btn small" data-png="parityT">PNG</button></div>
+          <div class="chart-box mid"><canvas id="chartParityT"></canvas></div>
+        </div>
+      </div>
+      <p class="cap">점이 대각선(실험 = 시뮬레이션) 위에 있으면 잘 맞는 거예요. 시뮬레이션은 각 행의 질량·높이와 왼쪽 패널의 상대밀도·셀 크기로 계산해요. 대각선보다 계속 위나 아래에 있다면 [모델 설정]에서 그 구조의 C 계수를 조정해 보세요.</p>
+    </section>
+
+    <!-- 모델 설정 -->
+    <section class="tab" id="tab-settings">
+      <div class="card">
+        <div class="card-head"><h3>측정·판정 설정</h3></div>
+        <div class="settings-grid" id="settingsMain"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>구조별 계수 (Gibson–Ashby)</h3><button class="btn small ghost" id="cfgReset" type="button">모두 기본값으로</button></div>
+        <p class="hint">E = C<sub>E</sub>·E<sub>s</sub>·ρ*<sup>n<sub>E</sub></sup>, σ<sub>피크</sub> = C<sub>σ</sub>·σ<sub>s</sub>·ρ*<sup>n<sub>σ</sub></sup>, σ<sub>고원</sub> = 고원비 × σ<sub>피크</sub>. 바꾼 값은 이 브라우저에만 기억되고, 코드의 기본값은 <code>js/config.js</code>에 있어요.</p>
+        <div class="table-wrap"><table class="data edit" id="coefTable"></table></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>재료·장치</h3></div>
+        <div class="settings-grid" id="settingsRig"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer class="foot">고등학교 과학과제연구 · 단순화된 1자유도 충돌 모델(로드셀 전달 단계 포함) · 모델 수식은 README.md 참고</footer>
+
+<!-- 외부 라이브러리 (CDN) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<!-- 시뮬레이터 코드 (순서 중요) -->
+<script src="js/config.js"></script>
+<script src="js/physics.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/viewer3d.js"></script>
+<script src="js/animation.js"></script>
+<script src="js/experiment.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
